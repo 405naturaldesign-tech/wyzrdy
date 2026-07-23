@@ -11,5 +11,5 @@ export const globalRateLimit = rateLimit({
 	// client and the load test intentionally fires hundreds/thousands of
 	// requests — they must not share the global per-IP budget, or the
 	// metrics dashboard gets starved out by its own load test / polling.
-	skip: (req) => req.path.startsWith('/perf/'),
+	skip: (req) => req.path.startsWith('/perf/') && process.env.NODE_ENV !== 'production',
 });

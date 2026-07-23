@@ -346,8 +346,7 @@ const addTransformIndexHtml = {
 	},
 };
 
-console.warn = () => { };
-
+// Logger silence for known non-actionable postcss warnings only.
 const logger = createLogger()
 const loggerError = logger.error
 
