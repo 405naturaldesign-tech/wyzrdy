@@ -54,10 +54,20 @@ async function handleCheckoutCompleted(session) {
 		logger.warn(`[webhook] no purchase for session ${session.id}`);
 		return;
 	}
+
+	// Compute 12-month expiration for founding purchases.
+	let subscriptionPeriodEnd = '';
+	if (purchase.purchase_type === 'founding_lifetime') {
+		const expires = new Date();
+		expires.setMonth(expires.getMonth() + 12);
+		subscriptionPeriodEnd = expires.toISOString().replace('T', ' ');
+	}
+
 	const patch = {
 		payment_status: 'succeeded',
 		entitlement_status: 'active',
 		completed_at: nowIso(),
+		subscription_period_end: subscriptionPeriodEnd || purchase.subscription_period_end || '',
 		stripe_customer_id: session.customer || purchase.stripe_customer_id || '',
 		stripe_payment_intent_id: session.payment_intent || purchase.stripe_payment_intent_id || '',
 		stripe_subscription_id: session.subscription || purchase.stripe_subscription_id || '',
