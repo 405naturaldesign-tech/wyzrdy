@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+.npm/
+
+# Environment / secrets — NEVER commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Build artifacts
+dist/
+build/
+apps/web/dist/
+.vite/
+
+# PocketBase runtime data (contains DB + uploads)
+apps/pocketbase/pb_data/
+pb_data/
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Temp
+vault/temp/
