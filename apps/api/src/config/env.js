@@ -10,13 +10,15 @@ import logger from '../utils/logger.js';
  * genuinely cannot serve requests without it.
  */
 const REQUIRED = [
-	// PB superuser is needed for any server-side PocketBase write (monitoring
-	// logs, blueprint persistence fallback). Both naming styles are accepted.
+	// Stripe is required for any payment functionality.
+	// Without STRIPE_SECRET_KEY, all checkout routes return 503.
 ];
 
 const RECOMMENDED = [
-	'OPENROUTER_API_KEY', // primary LLM router (deepseek-v4-flash)
-	'COMPOSIO_API_KEY', // tool orchestration
+	'OPENROUTER_API_KEY',       // primary LLM router (deepseek-v4-flash)
+	'COMPOSIO_API_KEY',         // tool orchestration
+	'STRIPE_SECRET_KEY',        // payment processing (test or live)
+	'STRIPE_WEBHOOK_SECRET',    // webhook signature verification
 ];
 
 const OPTIONAL_ALERTS = ['SENDGRID_API_KEY', 'SLACK_WEBHOOK_URL'];
@@ -41,11 +43,11 @@ export function validateEnv() {
 	if (missingRecommended.length) {
 		logger.warn(
 			`Missing recommended env vars: ${missingRecommended.join(', ')}. ` +
-				'Related features (AI blueprint generation, tool orchestration) are disabled until set.',
+				'Related features are disabled until set.',
 		);
 	}
 
-	const pbSuper = firstDefined('PB_SUPERUSER_EMAIL', 'POCKETBASE_SUPERUSER_EMAIL');
+	const pbSuper = firstDefined('PB_SUPERUSER_EMAIL', 'POCKETBASE_ADMIN_EMAIL');
 	if (!pbSuper) {
 		logger.warn(
 			'PB_SUPERUSER_EMAIL not set — server-side PocketBase writes (monitor history) are unavailable.',
