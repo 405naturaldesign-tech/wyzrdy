@@ -12,7 +12,7 @@ let stripe = null;
 export function getStripe() {
 	if (stripe) return stripe;
 	if (!STRIPE_SECRET_KEY || !STRIPE_SECRET_KEY.startsWith('sk_')) return null;
-	stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2024-06-20' });
+	stripe = new Stripe(STRIPE_SECRET_KEY, { apiVersion: '2026-06-24' });
 	return stripe;
 }
 

@@ -183,82 +183,49 @@ export function redo() {
 }
 
 /**
- * Aggregates the committed log into one draft per target: the first entry for a key
- * captures the original value/style, later entries display the updated value/style.
- * @returns {Map<string, { attribute: string|null, originalValue: string, currentValue: string, originalStyle: Record<string, string>, currentStyle: Record<string, string> }>}
- */
-function collectEditDrafts() {
-	const draftsByKey = new Map();
-	for (let index = 0; index <= actionPointer; index++) {
-		const action = actionLog[index];
-		const key = getActionKey(action);
-		let draft = draftsByKey.get(key);
-		if (!draft) {
-			draft = {
-				attribute: action.attribute ?? null,
-				originalValue: action.oldValue,
-				currentValue: action.newValue,
-				originalStyle: {},
-				currentStyle: {},
-			};
-			draftsByKey.set(key, draft);
-		}
-		draft.currentValue = action.newValue;
-		for (const [property, value] of Object.entries(action.style ?? {})) {
-			// Keep the earliest original so a later revert is detectable.
-			if (!(property in draft.originalStyle)) {
-				draft.originalStyle[property] = action.oldStyle?.[property] ?? '';
-			}
-			draft.currentStyle[property] = value;
-		}
-	}
-	return draftsByKey;
-}
-
-/**
- * Collapses the committed log into one net edit per target. Values or style props
- * edited back to their original are dropped, so an element reverted to its starting
- * state yields no edit.
- * @returns {Record<string, { originalValue: string, currentValue: string, style?: object, attribute?: string }>}
- */
-export function getCurrentEdits() {
-	const edits = {};
-	for (const [key, draft] of collectEditDrafts()) {
-		const isTextEdit = !draft.attribute;
-		const originalValue = isTextEdit ? sanitizeText(draft.originalValue) : draft.originalValue;
-		const currentValue = isTextEdit ? sanitizeText(draft.currentValue) : draft.currentValue;
-
-		const style = {};
-		for (const property of Object.keys(draft.currentStyle)) {
-			if ((draft.currentStyle[property] ?? '') !== (draft.originalStyle[property] ?? '')) {
-				style[property] = draft.currentStyle[property] ?? '';
-			}
-		}
-
-		const hasStyleChange = Object.keys(style).length > 0;
-		if (currentValue === originalValue && !hasStyleChange) continue;
-
-		const edit = { originalValue, currentValue };
-		if (draft.attribute) edit.attribute = draft.attribute;
-		if (hasStyleChange) edit.style = style;
-		edits[key] = edit;
-	}
-	return edits;
-}
-
-/**
- * Undo/redo availability plus the count of distinct elements that still differ
- * from their original. Derived from getCurrentEdits so it can't drift from what
- * gets persisted.
- * @returns {{ canUndo: boolean, canRedo: boolean, editedElementsCount: number }}
+ * Snapshot of undo/redo availability sent to the parent frame after each change.
+ * `editedElementsCount` collapses the committed log to the number of distinct
+ * edit targets (so re-editing the same element doesn't inflate the count).
+ * @returns {{ canUndo: boolean, canRedo: boolean, totalEdits: number, editedElementsCount: number }}
  */
 export function getEditState() {
-	const changedElementIds = new Set(
-		Object.keys(getCurrentEdits()).map(key => key.split('@')[0]),
-	);
+	const distinctKeys = new Set();
+	for (let index = 0; index <= actionPointer; index++) {
+		distinctKeys.add(getActionKey(actionLog[index]));
+	}
 	return {
 		canUndo: actionPointer >= 0,
 		canRedo: actionPointer < actionLog.length - 1,
-		editedElementsCount: changedElementIds.size,
+		totalEdits: actionPointer + 1,
+		editedElementsCount: distinctKeys.size,
 	};
+}
+
+/**
+ * Collapses the log into one net entry per edit target so the server can
+ * reconstruct the full diff from originalValue → currentValue.
+ * @returns {Record<string, { originalValue: string, currentValue: string, style?: object, attribute?: string }>}
+ */
+export function getCurrentEdits() {
+	const result = {};
+	for (let index = 0; index <= actionPointer; index++) {
+		const action = actionLog[index];
+		const key = getActionKey(action);
+
+		if (!result[key]) {
+			result[key] = { originalValue: action.oldValue };
+			if (action.attribute) result[key].attribute = action.attribute;
+		}
+		result[key].currentValue = action.newValue;
+		// Merge rather than overwrite so non-consecutive entries for the same
+		// element keep style props from earlier entries (e.g. align, then color).
+		if (action.style) result[key].style = { ...result[key].style, ...action.style };
+	}
+	for (const key of Object.keys(result)) {
+		if (!result[key].attribute) {
+			result[key].originalValue = sanitizeText(result[key].originalValue);
+			result[key].currentValue = sanitizeText(result[key].currentValue);
+		}
+	}
+	return result;
 }

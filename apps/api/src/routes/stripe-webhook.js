@@ -1,6 +1,7 @@
-import { getStripe, isStripeConfigured } from '../utils/stripeClient.js';
+import { isStripeConfiguredViaComposio, executeTool, createSession } from '../utils/composioClient.js';
 import { pb, countCompletedFounding, FOUNDING_CAP } from '../utils/founding.js';
 import { processViralConversion, processReferralReversal } from '../utils/viral.js';
+import { provisionHostingerSite } from '../utils/composioClient.js';
 import logger from '../utils/logger.js';
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
@@ -54,20 +55,10 @@ async function handleCheckoutCompleted(session) {
 		logger.warn(`[webhook] no purchase for session ${session.id}`);
 		return;
 	}
-
-	// Compute 12-month expiration for founding purchases.
-	let subscriptionPeriodEnd = '';
-	if (purchase.purchase_type === 'founding_lifetime') {
-		const expires = new Date();
-		expires.setMonth(expires.getMonth() + 12);
-		subscriptionPeriodEnd = expires.toISOString().replace('T', ' ');
-	}
-
 	const patch = {
 		payment_status: 'succeeded',
 		entitlement_status: 'active',
 		completed_at: nowIso(),
-		subscription_period_end: subscriptionPeriodEnd || purchase.subscription_period_end || '',
 		stripe_customer_id: session.customer || purchase.stripe_customer_id || '',
 		stripe_payment_intent_id: session.payment_intent || purchase.stripe_payment_intent_id || '',
 		stripe_subscription_id: session.subscription || purchase.stripe_subscription_id || '',
@@ -77,10 +68,11 @@ async function handleCheckoutCompleted(session) {
 		// Re-check the cap at grant time to prevent overselling.
 		const completed = await countCompletedFounding();
 		if (completed >= FOUNDING_CAP) {
-			const stripe = getStripe();
-			if (stripe && session.payment_intent) {
+			// Attempt refund via Composio MCP
+			if (session.payment_intent) {
 				try {
-					await stripe.refunds.create({ payment_intent: session.payment_intent });
+					const s = await createSession(purchase.user_id, { toolkits: ['stripe'] });
+					await executeTool(s, 'STRIPE_CREATE_REFUND', { payment_intent: session.payment_intent });
 				} catch (e) {
 					logger.error('[webhook] sold-out refund failed', e.message);
 				}
@@ -99,8 +91,32 @@ async function handleCheckoutCompleted(session) {
 	await updateReservationBySession(session.id, 'completed');
 	logger.info(`[webhook] granted access for purchase ${purchase.id}`);
 
-	// Record a referral conversion — only from this verified paid event, and
-	// only once (unique constraints on the pair and purchase id prevent dupes).
+	// Auto-provision Hostinger site if domain is provided in metadata
+	if (session.metadata?.domain && purchase.user_id) {
+		try {
+			const hostingerResult = await provisionHostingerSite(purchase.user_id, {
+				domain: session.metadata.domain,
+				siteName: session.metadata.site_name || session.metadata.domain.split('.')[0],
+				cms: session.metadata.cms || 'wordpress',
+				plan: session.metadata.hosting_plan || 'professional',
+			});
+			logger.info(`[webhook] provisioned Hostinger site for ${session.metadata.domain}, siteId: ${hostingerResult.siteId}`);
+			await pb.collection('hostinger_provisioning').create({
+				customer_id: session.customer || purchase.user_id,
+				domain: session.metadata.domain,
+				site_id: hostingerResult.siteId,
+				status: 'provisioned',
+				cms: session.metadata.cms || 'wordpress',
+				plan: session.metadata.hosting_plan || 'professional',
+				created_at: new Date().toISOString(),
+				metadata: JSON.stringify(hostingerResult),
+			});
+		} catch (err) {
+			logger.error(`[webhook] Hostinger provisioning failed for ${session.metadata.domain}: ${err.message}`);
+		}
+	}
+
+	// Record a referral conversion — only from this verified paid event.
 	const referrerId = session.metadata?.referrer_id;
 	const referredUser = session.metadata?.user_id || purchase.user_id;
 	if (referrerId && referredUser && referrerId !== referredUser) {
@@ -166,6 +182,17 @@ async function handleEvent(event) {
 			if (p) await pb.collection('founding_purchases').update(p.id, { entitlement_status: 'revoked' });
 			break;
 		}
+		case 'customer.subscription.created': {
+			const p = await findPurchase({ subscriptionId: obj.id });
+			if (p) {
+				await pb.collection('founding_purchases').update(p.id, {
+					subscription_period_end: obj.current_period_end
+						? new Date(obj.current_period_end * 1000).toISOString().replace('T', ' ')
+						: p.subscription_period_end,
+				});
+			}
+			break;
+		}
 		case 'charge.refunded': {
 			await processReferralReversal({ paymentIntentId: obj.payment_intent, dispute: false });
 			const p = await findPurchase({ paymentIntentId: obj.payment_intent });
@@ -184,6 +211,17 @@ async function handleEvent(event) {
 			if (p) await pb.collection('founding_purchases').update(p.id, { entitlement_status: 'suspended' });
 			break;
 		}
+		case 'charge.dispute.closed': {
+			const p = await findPurchase({ paymentIntentId: obj.payment_intent });
+			if (p) {
+				if (obj.status === 'won') {
+					await pb.collection('founding_purchases').update(p.id, { entitlement_status: 'active' });
+				} else if (obj.status === 'lost') {
+					await pb.collection('founding_purchases').update(p.id, { entitlement_status: 'revoked' });
+				}
+			}
+			break;
+		}
 		default:
 			logger.info(`[webhook] unhandled event ${event.type}`);
 	}
@@ -193,20 +231,33 @@ async function handleEvent(event) {
  * POST /webhooks/stripe — registered with express.raw BEFORE json parsing.
  * Verifies the Stripe signature against the raw body, dedupes by event id,
  * then processes. Always returns 200 quickly once verified.
+ *
+ * NOTE: Signature verification uses the local STRIPE_WEBHOOK_SECRET (crypto,
+ * not an API call — Composio cannot replace this). All other Stripe ops
+ * (refunds, etc.) route through Composio MCP.
  */
 export default async function stripeWebhook(req, res) {
-	if (!isStripeConfigured() || !WEBHOOK_SECRET) {
-		return res.status(503).json({ error: 'Stripe webhook not configured.' });
+	if (!WEBHOOK_SECRET) {
+		return res.status(503).json({ error: 'Stripe webhook not configured (STRIPE_WEBHOOK_SECRET missing).' });
 	}
-	const stripe = getStripe();
-	const sig = req.headers['stripe-signature'];
 
+	// Grab the Stripe signing secret from the env — we verify locally.
+	// We use the raw Stripe module (not the SDK client) for the constructEvent
+	// crypto verification only.
+	const sig = req.headers['stripe-signature'];
 	let event;
 	try {
-		event = stripe.webhooks.constructEvent(req.body, sig, WEBHOOK_SECRET);
+		const { default: Stripe } = await import('stripe');
+		const localStripe = new Stripe('sk_local_only_for_verify', { apiVersion: '2026-06-24' });
+		event = localStripe.webhooks.constructEvent(req.body, sig, WEBHOOK_SECRET);
 	} catch (err) {
 		logger.error('[webhook] signature verification failed', err.message);
 		return res.status(400).json({ error: `Webhook signature verification failed: ${err.message}` });
+	}
+
+	// Test mode check: only process live events
+	if (!event.livemode) {
+		return res.status(200).json({ received: true, testmode: true });
 	}
 
 	// Idempotency: bail if we've already recorded this event id.

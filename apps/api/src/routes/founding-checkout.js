@@ -1,5 +1,4 @@
-import { getStripe, isStripeConfigured } from '../utils/stripeClient.js';
-import { PLANS, getStripePriceId, isStripePriceConfigured, isValidPlanCycle } from '../config/pricing.js';
+import { createStripeCheckoutSession, isStripeConfiguredViaComposio } from '../utils/composioClient.js';
 import {
 	pb, getAvailability, findUserPurchase, RESERVATION_TTL_MS, FOUNDING_CAP,
 	countCompletedFounding,
@@ -7,33 +6,30 @@ import {
 import logger from '../utils/logger.js';
 
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://wyzrdy.com';
+const FOUNDING_PRICE_ID = process.env.STRIPE_FOUNDING_PRICE_ID;
+const MONTHLY_PRICE_ID = process.env.STRIPE_MONTHLY_PRICE_ID;
+const ANNUAL_PRICE_ID = process.env.STRIPE_ANNUAL_PRICE_ID;
 
-function ensureStripe(res) {
-	if (!isStripeConfigured()) {
+function ensureStripeViaComposio(res) {
+	if (!isStripeConfiguredViaComposio()) {
 		res.status(503).json({
-			error: 'Stripe is not configured. Add STRIPE_SECRET_KEY (test) to apps/api/.env.',
+			error: 'Stripe (via Composio) is not configured. Add COMPOSIO_API_KEY to apps/api/.env.',
 		});
 		return null;
 	}
-	return getStripe();
+	return true;
 }
 
-/**
- * POST /checkout/founding — $11.69 one-time Founding Access Checkout Session.
- * Uses mode: payment (never creates a subscription).
- * Creates a reservation + purchase ledger record before redirecting to Stripe.
- */
-export async function checkoutFounding(req, res) {
-	const stripe = ensureStripe(res);
-	if (!stripe) return;
+// NOTE: The founding Stripe Price/Product (STRIPE_FOUNDING_PRICE_ID) is
+// configured in the Stripe Dashboard, not in code. Update it there to:
+//   Product name: "Wyzrdy Individual — Founding Offer"
+//   Description: "One-time founding access for your first year. After 12
+//   months, standard subscription pricing applies."
 
-	// Verify the founding price ID is configured
-	const priceId = getStripePriceId('founding');
-	if (!priceId) {
-		return res.status(503).json({
-			error: 'Founding Access checkout is not configured. Set STRIPE_FOUNDING_PRICE_ID in apps/api/.env.',
-		});
-	}
+/** POST /checkout/founding — create a $11.69 one-time founding Checkout Session via Composio MCP. */
+export async function checkoutFounding(req, res) {
+	if (!ensureStripeViaComposio(res)) return;
+	if (!FOUNDING_PRICE_ID) throw new Error('STRIPE_FOUNDING_PRICE_ID is not set in apps/api/.env');
 
 	// Prevent duplicate founding entitlements.
 	const existing = await findUserPurchase(req.userId, 'founding_lifetime');
@@ -56,25 +52,21 @@ export async function checkoutFounding(req, res) {
 				.collection('referral_codes')
 				.getFirstListItem(`code = '${refCode.replace(/'/g, '')}'`);
 			if (rc && rc.owner && rc.owner !== req.userId) referrerId = rc.owner;
-		} catch (_) {
-			/* unknown code — ignore */
-		}
+		} catch (_) { /* unknown code — ignore */ }
 	}
 
-	const idempotencyKey = `founding-checkout-${req.userId}-${Date.now()}`;
 	const metadata = { user_id: req.userId, purchase_type: 'founding_lifetime' };
 	if (referrerId) metadata.referrer_id = referrerId;
 
-	const session = await stripe.checkout.sessions.create({
+	const session = await createStripeCheckoutSession(req.userId, {
 		mode: 'payment',
-		payment_method_types: ['card'],
-		line_items: [{ price: priceId, quantity: 1 }],
-		customer_email: req.user.email,
-		success_url: `${APP_BASE_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-		cancel_url: `${APP_BASE_URL}/checkout/cancel`,
+		lineItems: [{ price: FOUNDING_PRICE_ID, quantity: 1 }],
+		successUrl: `${APP_BASE_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+		cancelUrl: `${APP_BASE_URL}/checkout/cancel`,
+		customerEmail: req.user.email,
 		metadata,
-		payment_intent_data: { metadata },
-	}, { idempotencyKey });
+		extra: { payment_intent_data: { metadata } },
+	});
 
 	const now = new Date();
 	const expires = new Date(now.getTime() + RESERVATION_TTL_MS);
@@ -90,9 +82,9 @@ export async function checkoutFounding(req, res) {
 	await pb.collection('founding_purchases').create({
 		user_id: req.userId,
 		stripe_checkout_session_id: session.id,
-		stripe_price_id: priceId,
+		stripe_price_id: FOUNDING_PRICE_ID,
 		purchase_type: 'founding_lifetime',
-		amount_cents: PLANS.founding.amountCents,
+		amount_cents: 1169,
 		currency: 'usd',
 		payment_status: 'pending',
 		entitlement_status: 'pending',
@@ -102,46 +94,30 @@ export async function checkoutFounding(req, res) {
 	res.json({ url: session.url, session_id: session.id });
 }
 
-/**
- * POST /checkout/subscription — standard recurring subscription checkout.
- * body: { plan: 'individual'|'business'|'agency', cycle: 'monthly'|'annual' }
- * Uses mode: subscription (creates recurring billing).
- */
+/** POST /checkout/subscription?cycle=monthly|annual */
 export async function checkoutSubscription(req, res) {
-	const stripe = ensureStripe(res);
-	if (!stripe) return;
+	if (!ensureStripeViaComposio(res)) return;
 
-	const plan = (req.body?.plan || 'individual').toString().toLowerCase();
-	const cycle = (req.body?.cycle || 'monthly').toString().toLowerCase();
-
-	if (!isValidPlanCycle(plan, cycle)) {
-		return res.status(422).json({ error: `Invalid plan "${plan}" or cycle "${cycle}".` });
-	}
-
-	const priceId = getStripePriceId(plan, cycle);
+	const cycle = (req.query.cycle || req.body?.cycle || 'monthly').toLowerCase();
+	const priceId = cycle === 'annual' ? ANNUAL_PRICE_ID : MONTHLY_PRICE_ID;
 	if (!priceId) {
-		return res.status(503).json({
-			error: `Checkout for ${plan} (${cycle}) is not configured. Set the corresponding STRIPE_*_PRICE_ID in apps/api/.env.`,
-		});
+		throw new Error(`Stripe price id for ${cycle} is not set in apps/api/.env`);
 	}
 
-	const idempotencyKey = `sub-checkout-${req.userId}-${plan}-${cycle}-${Date.now()}`;
-
-	const session = await stripe.checkout.sessions.create({
+	const session = await createStripeCheckoutSession(req.userId, {
 		mode: 'subscription',
-		payment_method_types: ['card'],
-		line_items: [{ price: priceId, quantity: 1 }],
-		customer_email: req.user.email,
-		success_url: `${APP_BASE_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-		cancel_url: `${APP_BASE_URL}/checkout/cancel`,
-		metadata: { user_id: req.userId, purchase_type: `${plan}_${cycle}` },
-	}, { idempotencyKey });
+		lineItems: [{ price: priceId, quantity: 1 }],
+		successUrl: `${APP_BASE_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+		cancelUrl: `${APP_BASE_URL}/checkout/cancel`,
+		customerEmail: req.user.email,
+		metadata: { user_id: req.userId, purchase_type: cycle },
+	});
 
 	await pb.collection('founding_purchases').create({
 		user_id: req.userId,
 		stripe_checkout_session_id: session.id,
 		stripe_price_id: priceId,
-		purchase_type: `${plan}_${cycle}`,
+		purchase_type: cycle,
 		currency: 'usd',
 		payment_status: 'pending',
 		entitlement_status: 'pending',
@@ -150,28 +126,70 @@ export async function checkoutSubscription(req, res) {
 	res.json({ url: session.url, session_id: session.id });
 }
 
-/**
- * POST /checkout/portal — Stripe Customer Portal for existing customers.
- */
+// Viral pipeline tier → Stripe price id + checkout mode.
+const TIER_CHECKOUT = {
+	plato: { price: process.env.STRIPE_PLATO_PRICE_ID, mode: 'subscription' },
+	viral_entry: { price: process.env.STRIPE_VIRAL_ENTRY_PRICE_ID, mode: 'subscription' },
+	promo_reward: { price: process.env.STRIPE_PROMO_REWARD_PRICE_ID, mode: 'subscription' },
+	enterprise: { price: process.env.STRIPE_ENTERPRISE_PRICE_ID, mode: 'subscription' },
+	sprint_pipeline: { price: process.env.STRIPE_SPRINT_PRICE_ID, mode: 'payment' },
+};
+
+/** POST /checkout/tier?tier=plato|viral_entry|promo_reward|enterprise|sprint_pipeline */
+export async function checkoutTier(req, res) {
+	if (!ensureStripeViaComposio(res)) return;
+
+	const tier = (req.query.tier || req.body?.tier || '').toString().toLowerCase();
+	const cfg = TIER_CHECKOUT[tier];
+	if (!cfg) return res.status(422).json({ error: 'Unknown tier.' });
+	if (!cfg.price) throw new Error(`Stripe price id for ${tier} is not set in apps/api/.env`);
+
+	const session = await createStripeCheckoutSession(req.userId, {
+		mode: cfg.mode,
+		lineItems: [{ price: cfg.price, quantity: 1 }],
+		successUrl: `${APP_BASE_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+		cancelUrl: `${APP_BASE_URL}/checkout/cancel`,
+		customerEmail: req.user.email,
+		metadata: { user_id: req.userId, purchase_type: tier },
+	});
+
+	await pb.collection('founding_purchases').create({
+		user_id: req.userId,
+		stripe_checkout_session_id: session.id,
+		stripe_price_id: cfg.price,
+		purchase_type: tier,
+		currency: 'usd',
+		payment_status: 'pending',
+		entitlement_status: 'pending',
+	}).catch((err) => logger.warn(`[checkout] ledger create failed: ${err.message}`));
+
+	res.json({ url: session.url, session_id: session.id });
+}
+
+/** POST /checkout/portal — Stripe Customer Portal for the user's subscription. */
 export async function checkoutPortal(req, res) {
-	const stripe = ensureStripe(res);
-	if (!stripe) return;
+	if (!ensureStripeViaComposio(res)) return;
 
 	const purchase = await findUserPurchase(req.userId);
 	if (!purchase || !purchase.stripe_customer_id) {
 		return res.status(400).json({ error: 'No Stripe customer found for this account.' });
 	}
 
-	const portal = await stripe.billingPortal.sessions.create({
-		customer: purchase.stripe_customer_id,
-		return_url: `${APP_BASE_URL}/dashboard?tab=profile`,
+	// Portal sessions are created via Composio MCP
+	const session = await createStripeCheckoutSession(req.userId, {
+		mode: 'subscription',
+		lineItems: [],
+		successUrl: `${APP_BASE_URL}/dashboard?tab=profile`,
+		cancelUrl: `${APP_BASE_URL}/dashboard?tab=profile`,
+		customerEmail: req.user.email,
+		metadata: { user_id: req.userId, action: 'portal' },
+		extra: { customer: purchase.stripe_customer_id, return_url: `${APP_BASE_URL}/dashboard?tab=profile` },
 	});
-	res.json({ url: portal.url });
+
+	res.json({ url: session.url });
 }
 
-/**
- * GET /entitlement — the logged-in user's current entitlement.
- */
+/** GET /entitlement — the logged-in user's entitlement. */
 export async function getEntitlement(req, res) {
 	const purchase = await findUserPurchase(req.userId);
 	if (!purchase) {
@@ -195,16 +213,12 @@ export async function getEntitlement(req, res) {
 	});
 }
 
-/**
- * GET /payments/config-status — public, tells the client whether Stripe is live.
- */
+/** GET /payments/config-status — public, tells the client whether Stripe is live via Composio. */
 export async function paymentsConfigStatus(req, res) {
-	res.json({ stripe_configured: isStripeConfigured() });
+	res.json({ stripe_configured: isStripeConfiguredViaComposio() });
 }
 
-/**
- * GET /founding/count — public completed founding purchase counter.
- */
+/** GET /founding/count — public completed founding purchase counter. */
 export async function foundingCount(req, res) {
 	const completed = await countCompletedFounding();
 	res.json({

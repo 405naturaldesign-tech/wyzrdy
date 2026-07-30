@@ -1,4 +1,4 @@
-import { getStripe, isStripeConfigured } from '../utils/stripeClient.js';
+import { createStripeCheckoutSession, isStripeConfiguredViaComposio } from '../utils/composioClient.js';
 import {
 	pb, getActiveCampaign, getOrCreateState, getPricingTier,
 	expireStalePromos,
@@ -21,7 +21,7 @@ export async function generateLink(req, res) {
 	try {
 		const existing = await pb
 			.collection('viral_referrals')
-			.getFirstListItem(`referrer_id = '${req.userId}' && status = 'pending'`, { sort: '-created_at' });
+			.getFirstListItem(`referrer_id = '${req.userId}' && status = 'pending'`, { sort: '-created' });
 		if (existing) {
 			return res.json({ referral_code: existing.referral_code, referral_url: `${APP_BASE_URL}/signup?ref=${existing.referral_code}` });
 		}
@@ -44,10 +44,10 @@ export async function generateLink(req, res) {
 	res.json({ referral_code: code, referral_url: `${APP_BASE_URL}/signup?ref=${code}` });
 }
 
-/** POST /checkout/viral-entry — $7.77/mo Viral Entry Tier checkout. */
+/** POST /checkout/viral-entry — $7.77/mo Viral Entry Tier checkout via Composio MCP. */
 export async function checkoutViralEntry(req, res) {
-	if (!isStripeConfigured()) {
-		return res.status(503).json({ error: 'Stripe is not configured. Add STRIPE_SECRET_KEY (test) to apps/api/.env.' });
+	if (!isStripeConfiguredViaComposio()) {
+		return res.status(503).json({ error: 'Stripe via Composio is not configured. Add COMPOSIO_API_KEY to apps/api/.env.' });
 	}
 	const campaign = await getActiveCampaign();
 	if (!campaign || !campaign.viral_entry_tier_enabled) {
@@ -68,20 +68,18 @@ export async function checkoutViralEntry(req, res) {
 	}
 
 	if (!VIRAL_ENTRY_PRICE_ID) throw new Error('STRIPE_VIRAL_ENTRY_PRICE_ID is not set in apps/api/.env');
-	const stripe = getStripe();
 
-	const session = await stripe.checkout.sessions.create({
+	const session = await createStripeCheckoutSession(req.userId, {
 		mode: 'subscription',
-		line_items: [{ price: VIRAL_ENTRY_PRICE_ID, quantity: 1 }],
-		client_reference_id: req.userId,
+		lineItems: [{ price: VIRAL_ENTRY_PRICE_ID, quantity: 1 }],
+		successUrl: `${APP_BASE_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+		cancelUrl: `${APP_BASE_URL}/checkout/cancel`,
 		metadata: {
 			user_id: req.userId,
 			referral_code: referralCode,
 			tier: 'viral_entry',
 			referrer_id: referral.referrer_id,
 		},
-		success_url: `${APP_BASE_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-		cancel_url: `${APP_BASE_URL}/checkout/cancel`,
 	});
 
 	// Attach the checkout user to the referral so the webhook can self-referral check.
@@ -100,7 +98,7 @@ export async function referralStatus(req, res) {
 	// Surface the caller's active referral link (generate lazily if absent).
 	let link = '';
 	try {
-		const r = await pb.collection('viral_referrals').getFirstListItem(`referrer_id = '${req.userId}' && status = 'pending'`, { sort: '-created_at' });
+		const r = await pb.collection('viral_referrals').getFirstListItem(`referrer_id = '${req.userId}' && status = 'pending'`, { sort: '-created' });
 		link = `${APP_BASE_URL}/signup?ref=${r.referral_code}`;
 	} catch (_) { /* none */ }
 

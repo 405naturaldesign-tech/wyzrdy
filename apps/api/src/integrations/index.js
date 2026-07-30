@@ -10,11 +10,12 @@ import pydanticMcp from './pydanticMcp.js';
 import bs4 from './bs4.js';
 import obsidian from './obsidian.js';
 import googleDrive from './googleDrive.js';
+import hostinger from './hostinger.js';
 import logger from '../utils/logger.js';
 
 export const integrations = {
 	zai, claude, composio, openrouter, gemini, playwright,
-	firecrawl, spidercrawly, pydanticMcp, bs4, obsidian, googleDrive,
+	firecrawl, spidercrawly, pydanticMcp, bs4, obsidian, googleDrive, hostinger,
 };
 
 /** Run verify() on every integration in parallel and summarize the results. */

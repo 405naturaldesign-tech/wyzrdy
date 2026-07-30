@@ -6,8 +6,7 @@ export const SITE_ORIGIN =
 
 /** Build a personal referral link for a given user id. */
 export function referralLink(userId, source = '') {
-  if (!userId) return SITE_ORIGIN;
-  const base = `${SITE_ORIGIN}/?ref=${encodeURIComponent(userId)}`;
+  const base = `${SITE_ORIGIN}/?ref=${encodeURIComponent(userId || '')}`;
   return source ? `${base}&utm_source=${encodeURIComponent(source)}` : base;
 }
 

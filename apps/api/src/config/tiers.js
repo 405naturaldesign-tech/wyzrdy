@@ -11,8 +11,8 @@ export const TIERS = {
 	individual: {
 		id: 'individual',
 		name: 'Individual',
-		price: 22.22,
-		priceLabel: '$22.22',
+		price: 29,
+		priceLabel: '$29',
 		blurb: 'For solo founders validating a first offer.',
 		limits: {
 			reqPerMin: 100,
@@ -37,8 +37,8 @@ export const TIERS = {
 	business: {
 		id: 'business',
 		name: 'Business',
-		price: 77.77,
-		priceLabel: '$77.77',
+		price: 99,
+		priceLabel: '$99',
 		blurb: 'For growing teams shipping revenue systems.',
 		limits: {
 			reqPerMin: 500,
@@ -63,8 +63,8 @@ export const TIERS = {
 	agency: {
 		id: 'agency',
 		name: 'Agency',
-		price: 333.33,
-		priceLabel: '$333.33',
+		price: 499,
+		priceLabel: '$499',
 		blurb: 'For agencies running client work at scale.',
 		limits: {
 			reqPerMin: 2000,
