@@ -53,12 +53,12 @@ export async function createSession(userId, opts = {}) {
 		const session = await composio.create(userId, {
 			toolkits,
 			authConfigs: {
-				hostinger: process.env.COMPOSIO_AUTH_CONFIG_HOSTINGER || 'ac_Kzk3Vu6Khamy',
-				stripe: process.env.COMPOSIO_AUTH_CONFIG_STRIPE || 'ac__kRDZqgAG-Ur',
+				hostinger: process.env.COMPOSIO_AUTH_CONFIG_HOSTINGER,
+				stripe: process.env.COMPOSIO_AUTH_CONFIG_STRIPE,
 			},
 			connectedAccounts: {
-				hostinger: process.env.COMPOSIO_CONNECTED_ACCOUNT_HOSTINGER || 'ca_imd1K1wn6MxS',
-				stripe: process.env.COMPOSIO_CONNECTED_ACCOUNT_STRIPE || 'ca_2nmiXdU8RIs1',
+				hostinger: process.env.COMPOSIO_CONNECTED_ACCOUNT_HOSTINGER,
+				stripe: process.env.COMPOSIO_CONNECTED_ACCOUNT_STRIPE,
 			},
 			manageConnections: {
 				waitForConnections: true,

@@ -44,6 +44,9 @@ async function createInvoice(owner, { tier, amount, currency, provider, status }
 /* ---------------- provider checkout builders ---------------- */
 
 async function stripeCheckout({ userId, email, tier, cycle, amount, currency }) {
+	// DEPRECATED: Use Composio MCP (createStripeCheckoutSession in composioClient.js)
+	// instead of calling Stripe directly. This function is kept only for backward
+	// compatibility and will be removed after Composio MCP migration is verified.
 	if (!STRIPE_SECRET_KEY) throw new Error('STRIPE_NOT_CONFIGURED');
 	const params = new URLSearchParams();
 	params.append('mode', 'subscription');
@@ -236,8 +239,22 @@ export const webhookStripe = async (req, res) => {
 };
 
 export const webhookPaypal = async (req, res) => {
+	// SECURITY: PayPal webhook verification requires the PayPal SDK and
+	// PAYPAL_WEBHOOK_ID to verify the POST headers (PAYPAL-TRANSMISSION-*).
+	// Until that is implemented, this endpoint rejects all requests to prevent
+	// forged events from granting paid access.
+	if (!process.env.PAYPAL_WEBHOOK_ID) {
+		return res.status(503).json({
+			error: 'PayPal webhook not configured. Set PAYPAL_WEBHOOK_ID in .env to enable signature verification.',
+		});
+	}
 	const event = req.body || {};
 	logger.info('[payments] paypal webhook', event.event_type || 'unknown');
+	// TODO: implement PayPal signature verification using PAYPAL_WEBHOOK_ID
+	// and the paypal SDK:
+	//   const { webhookEvent } = await paypal.notification.webhookEvent.verify(
+	//     req.headers, req.body
+	//   );
 	if (event.event_type === 'CHECKOUT.ORDER.APPROVED' || event.event_type === 'PAYMENT.CAPTURE.COMPLETED') {
 		await markPaidByExternalId(event.resource?.id, 'paypal');
 	}
@@ -245,8 +262,19 @@ export const webhookPaypal = async (req, res) => {
 };
 
 export const webhookCoinbase = async (req, res) => {
+	// SECURITY: Coinbase webhook verification requires validating the
+	// X-CC-WEBHOOK-SIGNATURE header using COINBASE_COMMERCE_KEY.
+	// Until that is implemented, this endpoint rejects all requests to prevent
+	// forged events from granting paid access.
+	if (!process.env.COINBASE_COMMERCE_KEY) {
+		return res.status(503).json({
+			error: 'Coinbase webhook not configured. Set COINBASE_COMMERCE_KEY and COINBASE_WEBHOOK_SECRET in .env to enable signature verification.',
+		});
+	}
 	const event = req.body?.event || {};
 	logger.info('[payments] coinbase webhook', event.type || 'unknown');
+	// TODO: implement Coinbase signature verification by computing HMAC-SHA256
+	// of the raw request body and comparing against X-CC-WEBHOOK-SIGNATURE header.
 	if (event.type === 'charge:confirmed' || event.type === 'charge:resolved') {
 		await markPaidByExternalId(event.data?.id, 'crypto');
 	}

@@ -50,7 +50,7 @@ export async function checkoutFounding(req, res) {
 		try {
 			const rc = await pb
 				.collection('referral_codes')
-				.getFirstListItem(`code = '${refCode.replace(/'/g, '')}'`);
+				.getFirstListItem('code = {:code}', { code: refCode });
 			if (rc && rc.owner && rc.owner !== req.userId) referrerId = rc.owner;
 		} catch (_) { /* unknown code — ignore */ }
 	}

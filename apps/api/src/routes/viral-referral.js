@@ -59,7 +59,7 @@ export async function checkoutViralEntry(req, res) {
 
 	let referral;
 	try {
-		referral = await pb.collection('viral_referrals').getFirstListItem(`referral_code = '${referralCode.replace(/'/g, '')}'`);
+		referral = await pb.collection('viral_referrals').getFirstListItem('referral_code = {:code}', { code: referralCode });
 	} catch (_) {
 		return res.status(400).json({ error: 'Invalid referral code.' });
 	}
