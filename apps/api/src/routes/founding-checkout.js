@@ -7,6 +7,7 @@ import logger from '../utils/logger.js';
 
 const APP_BASE_URL = process.env.APP_BASE_URL || 'https://wyzrdy.com';
 const FOUNDING_PRICE_ID = process.env.STRIPE_FOUNDING_PRICE_ID;
+const FOUNDING_MEMBER_PRICE_ID = process.env.STRIPE_FOUNDING_MEMBER_PRICE_ID;
 const MONTHLY_PRICE_ID = process.env.STRIPE_MONTHLY_PRICE_ID;
 const ANNUAL_PRICE_ID = process.env.STRIPE_ANNUAL_PRICE_ID;
 
@@ -91,6 +92,61 @@ export async function checkoutFounding(req, res) {
 	});
 
 	logger.info(`[founding] checkout session ${session.id} for user ${req.userId}`);
+	res.json({ url: session.url, session_id: session.id });
+}
+
+/** POST /checkout/founding-member — create a $2/mo Founding Member subscription Checkout Session via Composio MCP. */
+export async function checkoutFoundingMember(req, res) {
+	if (!ensureStripeViaComposio(res)) return;
+	if (!FOUNDING_MEMBER_PRICE_ID) throw new Error('STRIPE_FOUNDING_MEMBER_PRICE_ID is not set in apps/api/.env');
+
+	// Prevent duplicate founding member subscriptions.
+	const existing = await findUserPurchase(req.userId, 'founding_member');
+	if (existing && ['active', 'pending'].includes(existing.entitlement_status) && existing.payment_status !== 'failed') {
+		return res.status(400).json({ error: 'You are already a Founding Member.' });
+	}
+
+	// Availability gate — reuse the existing founding cap counter.
+	const avail = await getAvailability();
+	if (avail.sold_out || avail.remaining <= 0) {
+		return res.status(429).json({ error: 'Founding Member spots are sold out.', ...avail });
+	}
+
+	const metadata = { user_id: req.userId, purchase_type: 'founding_member', grandfathered_rate: '200' };
+
+	const session = await createStripeCheckoutSession(req.userId, {
+		mode: 'subscription',
+		lineItems: [{ price: FOUNDING_MEMBER_PRICE_ID, quantity: 1 }],
+		successUrl: `${APP_BASE_URL}/checkout/success?session_id={CHECKOUT_SESSION_ID}&type=founding_member`,
+		cancelUrl: `${APP_BASE_URL}/checkout/founding-member`,
+		customerEmail: req.user.email,
+		metadata,
+		extra: { subscription_data: { metadata } },
+	});
+
+	const now = new Date();
+	const expires = new Date(now.getTime() + RESERVATION_TTL_MS);
+
+	await pb.collection('founding_reservations').create({
+		user_id: req.userId,
+		stripe_checkout_session_id: session.id,
+		reserved_at: now.toISOString().replace('T', ' '),
+		expires_at: expires.toISOString().replace('T', ' '),
+		status: 'active',
+	});
+
+	await pb.collection('founding_purchases').create({
+		user_id: req.userId,
+		stripe_checkout_session_id: session.id,
+		stripe_price_id: FOUNDING_MEMBER_PRICE_ID,
+		purchase_type: 'founding_member',
+		amount_cents: 200,
+		currency: 'usd',
+		payment_status: 'pending',
+		entitlement_status: 'pending',
+	});
+
+	logger.info(`[founding-member] checkout session ${session.id} for user ${req.userId}`);
 	res.json({ url: session.url, session_id: session.id });
 }
 

@@ -23,7 +23,7 @@ import { requireAuth, perUserRateLimit } from '../middleware/auth.js';
 import { requireAIEntitlement } from '../middleware/ai-entitlement.js';
 import { tierRateLimit } from '../middleware/tier.js';
 import {
-    checkoutFounding, checkoutSubscription, checkoutPortal, checkoutTier,
+    checkoutFounding, checkoutFoundingMember, checkoutSubscription, checkoutPortal, checkoutTier,
     getEntitlement, foundingCount, paymentsConfigStatus,
 } from './founding-checkout.js';
 import { generateLink, checkoutViralEntry, referralStatus } from './viral-referral.js';
@@ -103,6 +103,7 @@ export default () => {
     router.get('/payments/config-status', paymentsConfigStatus); // public
     router.get('/entitlement', requireAuth, getEntitlement);
     router.post('/checkout/founding', requireAuth, checkoutFounding);
+    router.post('/checkout/founding-member', requireAuth, checkoutFoundingMember);
     router.post('/checkout/subscription', requireAuth, checkoutSubscription);
     router.post('/checkout/tier', requireAuth, checkoutTier);
     router.post('/checkout/portal', requireAuth, checkoutPortal);

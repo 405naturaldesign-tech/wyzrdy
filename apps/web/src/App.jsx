@@ -16,6 +16,7 @@ import Pricing from './pages/Pricing';
 import Performance from './pages/Performance';
 import Checkout from './pages/Checkout';
 import FoundingCheckout from './pages/FoundingCheckout';
+import FoundingMember from './pages/FoundingMember';
 import CheckoutSuccess from './pages/CheckoutSuccess';
 import CheckoutCancel from './pages/CheckoutCancel';
 import ArtifactVault from './pages/ArtifactVault';
@@ -46,6 +47,7 @@ function App() {
                         <Route path="/performance" element={<Performance />} />
                         <Route path="/checkout" element={<Checkout />} />
                         <Route path="/checkout/founding" element={<FoundingCheckout />} />
+                        <Route path="/checkout/founding-member" element={<FoundingMember />} />
                         <Route path="/checkout/success" element={<CheckoutSuccess />} />
                         <Route path="/checkout/cancel" element={<CheckoutCancel />} />
                         <Route path="/artifacts" element={<ArtifactVault />} />

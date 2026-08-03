@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles, ArrowRight, Play, ShieldCheck, TrendingUp, Zap, Layers,
   Boxes, PlugZap, BarChart3, MessageSquare, Hammer, Gauge, CheckCircle2, Loader2, Radar, Compass, ChevronDown,
+  Flame, Star, Clock, Lock, Users,
 } from 'lucide-react';
 import { SiteNav, SiteFooter, Section, reveal } from '@/components/Shell';
 import { useAuth } from '@/lib/auth';
@@ -12,7 +13,7 @@ import WorkflowDialog from '@/components/WorkflowDialog';
 import ForgeSeoHero from '@/components/ForgeSeoHero';
 import ShareButtons from '@/components/ShareButtons';
 import PilotCounter from '@/components/PilotCounter';
-import { FOUNDING } from '@/lib/founding';
+import { FOUNDING, FOUNDING_MEMBER, foundingMemberRemainingLabel } from '@/lib/founding';
 
 const WORKFLOW = [
   { icon: MessageSquare, label: 'Interpret objective', tint: 'text-gold' },
@@ -134,6 +135,153 @@ function WyzrdyBuildSection() {
             <ArrowRight className="h-5 w-5 text-gold" />
           </button>
         </motion.div>
+      </Section>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────
+// Founding Member Launch — $2 First Month
+// ────────────────────────────────────────────
+function FoundingMemberCountdown() {
+  const [count, setCount] = React.useState(null);
+  React.useEffect(() => {
+    fetch('/hcgi/api/founding/count')
+      .then((r) => r.json())
+      .then((d) => setCount({ claimed: d.completed_purchases || 0, remaining: d.remaining, cap: d.total_cap }))
+      .catch(() => setCount({ claimed: 0, remaining: FOUNDING_MEMBER.cap, cap: FOUNDING_MEMBER.cap }));
+  }, []);
+  const claimed = count?.claimed ?? 0;
+  const cap = count?.cap ?? FOUNDING_MEMBER.cap;
+  const pct = Math.min(100, (claimed / cap) * 100);
+  return (
+    <div className="glass rounded-2xl p-5">
+      <div className="flex items-center justify-between text-sm">
+        <span className="inline-flex items-center gap-2 font-medium">
+          <Flame className="h-4 w-4 text-destructive" />
+          <span className="text-destructive font-bold">{claimed.toLocaleString()}</span> founders claimed
+        </span>
+        <span className="text-muted-foreground">
+          {(cap - claimed).toLocaleString()} spots remain
+        </span>
+      </div>
+      <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-secondary">
+        <motion.div
+          className="h-full rounded-full bg-gradient-to-r from-destructive via-orange-400 to-gold"
+          initial={{ width: 0 }}
+          animate={{ width: `${pct}%` }}
+          transition={{ duration: 1.2, ease: 'easeOut' }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function FoundingMemberHero() {
+  const { isAuthed } = useAuth();
+  return (
+    <div className="relative overflow-hidden border-y-2 border-destructive/20 bg-gradient-to-b from-destructive/5 via-transparent to-transparent">
+      <div className="absolute inset-0 bg-grid opacity-[0.15]" />
+      <div className="pointer-events-none absolute -left-40 top-0 h-[500px] w-[500px] rounded-full bg-destructive/5 blur-[140px]" />
+      <div className="pointer-events-none absolute -right-40 bottom-0 h-[500px] w-[500px] rounded-full bg-gold/5 blur-[140px]" />
+
+      <Section className="relative py-16 md:py-24">
+        <div className="grid items-center gap-10 lg:grid-cols-[1.1fr_0.9fr]">
+          {/* Left: Urgency + Value */}
+          <div>
+            <motion.div {...reveal(0)} className="mb-4 inline-flex items-center gap-2 rounded-full border border-destructive/40 bg-destructive/10 px-3 py-1.5">
+              <Flame className="h-3.5 w-3.5 text-destructive" />
+              <span className="text-xs font-bold tracking-wide text-destructive">FOUNDING MEMBER LAUNCH — ACT NOW</span>
+            </motion.div>
+
+            <motion.h2 {...reveal(0.05)} className="font-serif-lux text-4xl font-semibold leading-[1.05] md:text-5xl">
+              Founding Member:<br />
+              <span className="text-gold">$2 First Month,</span>{' '}
+              <span className="underline decoration-destructive/50 decoration-4 underline-offset-4">Lock In Forever</span>
+            </motion.h2>
+
+            <motion.p {...reveal(0.1)} className="mt-4 max-w-xl text-lg text-muted-foreground">
+              {FOUNDING_MEMBER.headline}
+            </motion.p>
+
+            <motion.div {...reveal(0.14)} className="mt-4 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5"><Lock className="h-4 w-4 text-accent" /> Rate locked for life</span>
+              <span className="inline-flex items-center gap-1.5"><Clock className="h-4 w-4 text-destructive" /> Only {FOUNDING_MEMBER.cap.toLocaleString()} spots</span>
+              <span className="inline-flex items-center gap-1.5"><Star className="h-4 w-4 text-gold" /> Cancel anytime</span>
+            </motion.div>
+
+            <motion.div {...reveal(0.18)} className="mt-6 max-w-sm">
+              <FoundingMemberCountdown />
+            </motion.div>
+
+            <motion.div {...reveal(0.22)} className="mt-6 flex flex-wrap items-center gap-3">
+              <Link
+                to={isAuthed ? '/checkout/founding-member' : '/login?next=/checkout/founding-member'}
+                className="group inline-flex items-center gap-2 rounded-full bg-primary px-7 py-3.5 text-base font-bold text-primary-foreground glow-gold transition-transform active:scale-[0.97]"
+              >
+                {FOUNDING_MEMBER.cta} <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-0.5" />
+              </Link>
+              <Link to="/pricing" className="rounded-full border border-border px-5 py-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                Compare plans
+              </Link>
+            </motion.div>
+
+            <motion.p {...reveal(0.25)} className="mt-3 text-xs text-muted-foreground">
+              <span className="font-semibold text-destructive">⚠</span> If you cancel, the $2/mo rate is gone forever. Standard pricing applies on re-subscription.
+            </motion.p>
+          </div>
+
+          {/* Right: Pricing card + Social proof */}
+          <motion.div {...reveal(0.12)} className="flex flex-col gap-4">
+            {/* Pricing Card */}
+            <div className="glass rounded-2xl p-6 border-2 border-primary/40 glow-gold text-center">
+              <div className="text-xs font-semibold tracking-widest text-gold uppercase">Founding Member Price</div>
+              <div className="mt-3 font-serif-lux">
+                <span className="text-6xl font-bold text-gold">$2</span>
+                <span className="text-lg text-muted-foreground">/mo</span>
+              </div>
+              <div className="mt-1 text-sm text-muted-foreground">
+                <span className="line-through">$29/mo</span> — lock in your founding rate forever
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2 text-left text-sm">
+                {[
+                  'Full Individual plan',
+                  'All AI features',
+                  'Unlimited projects',
+                  'Founding Member badge',
+                ].map((f) => (
+                  <div key={f} className="flex items-start gap-1.5">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-accent" />{f}
+                  </div>
+                ))}
+              </div>
+              <Link
+                to={isAuthed ? '/checkout/founding-member' : '/login?next=/checkout/founding-member'}
+                className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-bold text-primary-foreground glow-gold transition-transform active:scale-[0.97]"
+              >
+                Lock In $2/mo Now <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
+
+            {/* Social Proof */}
+            <div className="grid gap-3 sm:grid-cols-3">
+              {FOUNDING_MEMBER.socialProof.map((t, i) => (
+                <div key={i} className="glass rounded-xl p-4 text-center">
+                  <div className="flex justify-center gap-0.5 mb-1.5">
+                    {[...Array(5)].map((_, j) => (
+                      <Star key={j} className="h-3 w-3 fill-gold text-gold" />
+                    ))}
+                  </div>
+                  <p className="text-xs italic text-muted-foreground leading-relaxed">"{t.quote}"</p>
+                  <p className="mt-2 text-[11px]">
+                    <span className="font-semibold">{t.name}</span>
+                    <span className="text-muted-foreground"> — {t.role}</span>
+                  </p>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        </div>
       </Section>
     </div>
   );
@@ -303,6 +451,7 @@ export default function HomePage() {
       />
       <SiteNav />
       <ForgeSeoHero />
+      <FoundingMemberHero />
 
       {/* logo ribbon */}
       <div className="relative overflow-hidden border-y border-border py-4">

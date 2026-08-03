@@ -24,6 +24,11 @@ export async function startFoundingCheckout() {
   return authedFetch('/checkout/founding', { method: 'POST' });
 }
 
+/** Create the $2/mo Founding Member checkout session and return the Stripe URL. */
+export async function startFoundingMemberCheckout() {
+  return authedFetch('/checkout/founding-member', { method: 'POST' });
+}
+
 /** Create a monthly/annual subscription checkout session. */
 export async function startSubscriptionCheckout(cycle = 'monthly') {
   return authedFetch(`/checkout/subscription?cycle=${encodeURIComponent(cycle)}`, { method: 'POST' });
