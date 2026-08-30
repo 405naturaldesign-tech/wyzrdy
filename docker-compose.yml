@@ -1,0 +1,92 @@
+version: "3.8"
+
+services:
+  pocketbase:
+    build:
+      context: .
+      dockerfile: apps/pocketbase/Dockerfile
+    container_name: wyzrdy-pocketbase
+    ports:
+      - "8090:8090"
+    environment:
+      - PB_ENCRYPTION_KEY=${PB_ENCRYPTION_KEY:-your-encryption-key-change-me}
+    volumes:
+      - pb_data:/data
+    networks:
+      - wyzrdy-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: wyzrdy-api
+    ports:
+      - "3001:3001"
+    depends_on:
+      pocketbase:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PB_URL=http://pocketbase:8090
+    env_file:
+      - apps/api/.env
+    networks:
+      - wyzrdy-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: wyzrdy-web
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+    networks:
+      - wyzrdy-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: apps/scheduler/Dockerfile
+    container_name: wyzrdy-scheduler
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      - API_URL=http://api:3001
+      - SERVICE_TOKEN=${SERVICE_TOKEN:-your-service-token-change-me}
+    networks:
+      - wyzrdy-network
+    restart: unless-stopped
+
+networks:
+  wyzrdy-network:
+    driver: bridge
+
+volumes:
+  pb_data:

@@ -1,0 +1,12 @@
+{
+	"name": "scheduler",
+	"type": "module",
+	"version": "0.0.0",
+	"private": true,
+	"scripts": {
+		"start": "node scheduler.js"
+	},
+	"dependencies": {
+		"node-cron": "^3.0.2"
+	}
+}
