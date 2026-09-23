@@ -26,12 +26,12 @@ const principles = [
     text: 'Those who teach, heal, protect, cultivate, and create must be replenished by the living systems their work strengthens.',
   },
   {
-    icon: Recycle,
+    icon: seed,
     title: 'Turn benefit into infrastructure',
     text: 'A benefit received becomes the capacity to create another benefit. Beneficiaries become benefactors, and the cycle compounds.',
   },
   {
-    icon: Globe2,
+    icon: infinity,
     title: 'Design for all inhabitants',
     text: 'Human prosperity cannot be separated from the prosperity of the ecosystems, communities, and species sharing one world.',
   },
