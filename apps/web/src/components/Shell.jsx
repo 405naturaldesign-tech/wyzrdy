@@ -67,6 +67,7 @@ export function SiteNav() {
           })}
         </nav>
         <div className="hidden items-center gap-3 md:flex">
+          <Link to="/manifesto" className={`text-sm transition-colors ${loc.pathname === '/manifesto' ? 'text-gold' : 'text-muted-foreground hover:text-foreground'}`}>Manifesto</Link>
           <Link to="/pricing" className={`text-sm transition-colors ${loc.pathname === '/pricing' ? 'text-gold' : 'text-muted-foreground hover:text-foreground'}`}>Pricing</Link>
           {isAuthed && (
             <Link to="/artifacts" className={`text-sm transition-colors ${loc.pathname === '/artifacts' ? 'text-gold' : 'text-muted-foreground hover:text-foreground'}`}>Artifacts</Link>
@@ -100,6 +101,10 @@ export function SiteNav() {
             <span className="font-medium">Pricing</span>
             <span className="text-xs text-muted-foreground">Plans & tiers</span>
           </Link>
+          <Link to="/manifesto" className="flex items-center justify-between rounded-xl px-4 py-3 hover:bg-secondary">
+            <span className="font-medium">Manifesto</span>
+            <span className="text-xs text-muted-foreground">Our public vision</span>
+          </Link>
           <Link to="/contact" className="flex items-center justify-between rounded-xl px-4 py-3 hover:bg-secondary">
             <span className="font-medium">Contact</span>
             <span className="text-xs text-muted-foreground">Support & legal</span>
@@ -130,6 +135,7 @@ const FOOTER_COLS = [
     { t: 'Artifact Vault', to: '/artifacts' },
   ] },
   { h: 'Company', items: [
+    { t: 'Manifesto', to: '/manifesto' },
     { t: 'Contact & support', to: '/contact' }, { t: 'Security & compliance', to: '/security' },
     { t: 'Accessibility', to: '/accessibility' }, { t: 'Data processing (DPA)', to: '/dpa' },
   ] },

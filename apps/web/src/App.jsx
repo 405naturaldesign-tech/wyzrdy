@@ -24,6 +24,7 @@ import LegalPage from './pages/LegalPage';
 import DataRequest from './pages/DataRequest';
 import Contact from './pages/Contact';
 import Checklist from './pages/Checklist';
+import Manifesto from './pages/Manifesto';
 import NotFound from './pages/NotFound';
 import { PRIVACY, TERMS, COOKIES, SECURITY, ACCESSIBILITY, DPA } from '@/lib/legalContent';
 
@@ -59,6 +60,7 @@ function App() {
                         <Route path="/dpa" element={<LegalPage page={DPA} />} />
                         <Route path="/data-request" element={<DataRequest />} />
                         <Route path="/contact" element={<Contact />} />
+                        <Route path="/manifesto" element={<Manifesto />} />
                         <Route path="/admin/checklist" element={<Checklist />} />
                         <Route path="*" element={<NotFound />} />
                     </Routes>
