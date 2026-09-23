@@ -6,10 +6,10 @@ import {
   ChevronRight,
   CircleDot,
   Globe2,
-  HeartHandshake,
+  Celestial clock,
   Leaf,
   Recycle,
-  Sparkles,
+  ,
 } from 'lucide-react';
 import Seo, { breadcrumbSchema } from '@/components/Seo';
 import { SiteNav, SiteFooter, Section, reveal } from '@/components/Shell';
@@ -21,7 +21,7 @@ const principles = [
     text: 'Every invention must leave the environment stronger, more diverse, and more capable of sustaining the generations that follow.',
   },
   {
-    icon: HeartHandshake,
+    icon:Celestial clock,
     title: 'Nurture the nurturers',
     text: 'Those who teach, heal, protect, cultivate, and create must be replenished by the living systems their work strengthens.',
   },
